@@ -25,7 +25,12 @@ from __future__ import unicode_literals
 import netaddr
 import re
 import socket
+import functools
+import tempfile
+import uuid
+import os
 
+from netmiko import FileTransfer, InLineTransfer
 from netmiko import ConnectHandler
 from napalm.base import NetworkDriver
 from napalm.base.exceptions import (
@@ -50,6 +55,13 @@ class S350Driver(NetworkDriver):
         self.username = username
         self.password = password
         self.timeout = timeout
+        self.config_replace = False
+        self.candidate_cfg = optional_args.get("candidate_cfg", "candidate_config.txt")
+        self.merge_cfg = optional_args.get("merge_cfg", "merge_config.txt")
+        self.rollback_cfg = optional_args.get("rollback_cfg", "rollback_config.txt")
+        self.inline_transfer = optional_args.get("inline_transfer", False)
+        self.auto_file_prompt = optional_args.get("auto_file_prompt", True)
+        self.prompt_quiet_configured = None
 
         if optional_args is None:
             optional_args = {}
@@ -293,7 +305,6 @@ class S350Driver(NetworkDriver):
 
         return interfaces
 
-
     def get_interfaces_ip(self):
         """Returns all configured interface IP addresses."""
         interfaces = {}
@@ -445,3 +456,27 @@ class S350Driver(NetworkDriver):
         if self.device and self._dest_file_system is None:
             self._dest_file_system = self._discover_file_system()
         return self._dest_file_system
+
+    def cli(self, commands):
+        """
+        Execute a list of commands and return the output in a dictionary format using the command
+        as the key.
+
+        Example input:
+        ['show clock', 'show calendar']
+
+        Output example:
+        {   'show calendar': u'22:02:01 UTC Thu Feb 18 2016',
+            'show clock': u'*22:01:51.165 UTC Thu Feb 18 2016'}
+
+        """
+        cli_output = dict()
+        if type(commands) is not list:
+            raise TypeError("Please enter a valid list of commands!")
+
+        for command in commands:
+            output = self._send_command(command)
+            cli_output.setdefault(command, {})
+            cli_output[command] = output
+
+        return cli_output
